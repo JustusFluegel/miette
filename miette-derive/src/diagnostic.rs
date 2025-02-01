@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::{punctuated::Punctuated, DeriveInput, Token};
 
 use crate::code::Code;
@@ -217,33 +217,37 @@ impl DiagnosticDefArgs {
     }
 }
 
-impl Diagnostic {
-    pub fn from_derive_input(input: DeriveInput) -> Result<Self, syn::Error> {
-        let input_attrs = input
-            .attrs
+impl syn::parse::Parse for Diagnostic {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let DeriveInput {
+            attrs,
+            vis: _,
+            ident,
+            generics,
+            data,
+        } = input.parse()?;
+
+        let diagnostic_attrs = attrs
             .iter()
-            .filter(|x| x.path().is_ident("diagnostic"))
+            .filter(|x| x.path().is_ident("diagostic"))
             .collect::<Vec<&syn::Attribute>>();
-        Ok(match input.data {
+
+        Ok(match data {
             syn::Data::Struct(data_struct) => {
-                let args = DiagnosticDefArgs::parse(
-                    &input.ident,
-                    &data_struct.fields,
-                    &input_attrs,
-                    true,
-                )?;
+                let args =
+                    DiagnosticDefArgs::parse(&ident, &data_struct.fields, &diagnostic_attrs, true)?;
 
                 Diagnostic::Struct {
                     fields: data_struct.fields,
-                    ident: input.ident,
-                    generics: input.generics,
+                    ident,
+                    generics,
                     args,
                 }
             }
             syn::Data::Enum(syn::DataEnum { variants, .. }) => {
                 let mut vars = Vec::new();
                 for var in variants {
-                    let mut variant_attrs = input_attrs.clone();
+                    let mut variant_attrs = diagnostic_attrs.clone();
                     variant_attrs
                         .extend(var.attrs.iter().filter(|x| x.path().is_ident("diagnostic")));
                     let args =
@@ -255,21 +259,23 @@ impl Diagnostic {
                     });
                 }
                 Diagnostic::Enum {
-                    ident: input.ident,
-                    generics: input.generics,
+                    ident,
+                    generics,
                     variants: vars,
                 }
             }
             syn::Data::Union(_) => {
                 return Err(syn::Error::new(
-                    input.ident.span(),
+                    ident.span(),
                     "Can't derive Diagnostic for Unions",
                 ))
             }
         })
     }
+}
 
-    pub fn gen(&self) -> TokenStream {
+impl ToTokens for Diagnostic {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         match self {
             Self::Struct {
                 ident,
@@ -290,7 +296,7 @@ impl Diagnostic {
                         let diagnostic_source_method =
                             forward.gen_struct_method(WhichFn::DiagnosticSource);
 
-                        quote! {
+                        tokens.extend(quote! {
                             impl #impl_generics miette::Diagnostic for #ident #ty_generics #where_clause {
                                 #code_method
                                 #help_method
@@ -301,7 +307,7 @@ impl Diagnostic {
                                 #related_method
                                 #diagnostic_source_method
                             }
-                        }
+                        })
                     }
                     DiagnosticDefArgs::Concrete(concrete) => {
                         let forward = |which| {
@@ -350,7 +356,7 @@ impl Diagnostic {
                             .as_ref()
                             .and_then(|x| x.gen_struct())
                             .or_else(|| forward(WhichFn::DiagnosticSource));
-                        quote! {
+                        tokens.extend(quote! {
                             impl #impl_generics miette::Diagnostic for #ident #ty_generics #where_clause {
                                 #code_body
                                 #help_body
@@ -361,7 +367,7 @@ impl Diagnostic {
                                 #src_body
                                 #diagnostic_source
                             }
-                        }
+                        })
                     }
                 }
             }
@@ -379,7 +385,7 @@ impl Diagnostic {
                 let rel_body = Related::gen_enum(variants);
                 let url_body = Url::gen_enum(ident, variants);
                 let diagnostic_source_body = DiagnosticSource::gen_enum(variants);
-                quote! {
+                tokens.extend(quote! {
                     impl #impl_generics miette::Diagnostic for #ident #ty_generics #where_clause {
                         #code_body
                         #help_body
@@ -390,7 +396,7 @@ impl Diagnostic {
                         #url_body
                         #diagnostic_source_body
                     }
-                }
+                })
             }
         }
     }
