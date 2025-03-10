@@ -248,7 +248,9 @@ impl Labels {
 
         Some(quote! {
             #[allow(unused_variables)]
-            fn labels(&self) -> std::option::Option<std::boxed::Box<dyn std::iter::Iterator<Item = miette::LabeledSpan> + '_>> {
+            fn labels(&self) -> std::option::Option<
+                std::boxed::Box<dyn std::iter::Iterator<Item = miette::LabeledSpan> + '_>
+            > {
                 use miette::macro_helpers::ToOption;
                 let Self #display_pat = self;
 
@@ -258,7 +260,10 @@ impl Labels {
                 .into_iter()
                 #(#collections_chain)*;
 
-                std::option::Option::Some(Box::new(labels_iter.filter(Option::is_some).map(Option::unwrap)))
+                std::option::Option::Some(Box::new(
+                    labels_iter
+                        .filter_map(|x| x)
+                ))
             }
         })
     }
@@ -271,7 +276,12 @@ impl Labels {
                 let (display_pat, display_members) = display_pat_members(fields);
                 labels.as_ref().and_then(|labels| {
                     let variant_labels = labels.0.iter().filter_map(|label| {
-                        let Label { span, label, ty, lbl_ty } = label;
+                        let Label {
+                            span,
+                            label,
+                            ty,
+                            lbl_ty,
+                        } = label;
                         if *lbl_ty == LabelType::Collection {
                             return None;
                         }
@@ -303,7 +313,12 @@ impl Labels {
                         })
                     });
                     let collections_chain = labels.0.iter().filter_map(|label| {
-                        let Label { span, label, ty: _, lbl_ty } = label;
+                        let Label {
+                            span,
+                            label,
+                            ty: _,
+                            lbl_ty,
+                        } = label;
                         if *lbl_ty != LabelType::Collection {
                             return None;
                         }
@@ -324,7 +339,9 @@ impl Labels {
                                 let display = #display;
                                 #field.iter().map(move |span| {
                                     use miette::macro_helpers::{ToLabelSpanWrapper,ToLabeledSpan};
-                                    let mut labeled_span = ToLabelSpanWrapper::to_labeled_span(span.clone());
+                                    let mut labeled_span = ToLabelSpanWrapper::to_labeled_span(
+                                        span.clone()
+                                    );
                                     if display.is_some() && labeled_span.label().is_none() {
                                         labeled_span.set_label(display.clone());
                                     }
@@ -344,7 +361,10 @@ impl Labels {
                                 ]
                                 .into_iter()
                                 #(#collections_chain)*;
-                                std::option::Option::Some(std::boxed::Box::new(labels_iter.filter(Option::is_some).map(Option::unwrap)))
+                                std::option::Option::Some(std::boxed::Box::new(
+                                    labels_iter
+                                        .filter_map(|x| x)
+                                    ))
                             }
                         }),
                     }
